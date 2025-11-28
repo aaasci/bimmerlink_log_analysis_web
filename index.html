@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>BimmerLink Log Analyzer (Web)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f5;
+      color: #222;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-top: 0;
+    }
+
+    .row {
+      margin-bottom: 16px;
+    }
+
+    label {
+      font-weight: 600;
+    }
+
+    input[type="file"] {
+      margin-top: 8px;
+    }
+
+    select {
+      margin-top: 4px;
+      min-width: 220px;
+      padding: 4px;
+      font-size: 13px;
+    }
+
+    button {
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid #0078d4;
+      background: #0078d4;
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 8px;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .file-info,
+    .export-info {
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: #555;
+    }
+
+    .charts {
+      margin-top: 24px;
+    }
+
+    .chart-card {
+      margin-bottom: 32px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      background: #fafafa;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .chart-header span {
+      margin-right: 8px;
+    }
+
+    .stats {
+      font-size: 12px;
+      color: #444;
+    }
+
+    .chart-card canvas {
+      width: 100% !important;
+      height: 260px !important;
+      display: block;
+    }
+
+    a {
+      color: #0078d4;
+    }
+
+    .header-list {
+      font-size: 11px;
+      max-height: 120px;
+      overflow: auto;
+      background: #fafafa;
+      border-radius: 4px;
+      padding: 6px;
+      border: 1px solid #eee;
+      white-space: pre-wrap;
+    }
+
+    .debug-block {
+      white-space: pre-wrap;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      border: 1px dashed #ccc;
+      padding: 6px;
+      margin-top: 6px;
+      max-height: 260px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BMW/Mini BimmerLink Log Analyzer (Web) v1.0</h1>
+    <p>Client-side Web Version</p>
+
+    <div class="row">
+      <label for="csvFile">Import Exported Log .csv</label><br />
+      <input type="file" id="csvFile" accept=".csv,text/csv" />
+    </div>
+
+    <div class="row file-info" id="fileInfo"></div>
+
+    <div class="row" id="columnSelectors" style="display:none;">
+      <div style="margin-bottom:8px;">
+        <label for="timeSelect">Time column:</label><br />
+        <select id="timeSelect" disabled></select>
+      </div>
+      <div>
+        <label for="engineSelect">Correlation column:</label><br />
+        <select id="engineSelect"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="runBtn" disabled>RUN</button>
+      <button id="downloadTxtBtn" disabled>Download Sensor List (.txt)</button>
+      <button id="downloadPdfBtn" disabled>Download Charts (.pdf)</button>
+    </div>
+
+    <div class="row export-info" id="exportInfo"></div>
+    <div class="row debug-block" id="debugInfo" style="display:none;"></div>
+
+    <div class="row" id="headerRow" style="display:none;">
+      <div><strong>Detected headers:</strong></div>
+      <div class="header-list" id="headerList"></div>
+    </div>
+
+    <div class="charts" id="chartsContainer"></div>
+
+    <div class="row" style="margin-top: 32px;">
+      <a href="https://blog.armanasci.com" target="_blank">https://blog.armanasci.com</a>
+    </div>
+  </div>
+
+  <script>
+    function splitCSVLine(line, delimiter) {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+
+        if (ch === '"') {
+          if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === delimiter && !inQuotes) {
+          result.push(current);
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+      result.push(current);
+      return result;
+    }
+
+    function cleanField(value) {
+      return value.trim().replace(/^"|"$/g, "");
+    }
+
+    function detectDelimiter(firstLine) {
+      function countDelim(line, delimiter) {
+        let inQuotes = false;
+        let count = 0;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            inQuotes = !inQuotes;
+          } else if (ch === delimiter && !inQuotes) {
+            count++;
+          }
+        }
+        return count;
+      }
+
+      const commaCount = countDelim(firstLine, ",");
+      const semicolonCount = countDelim(firstLine, ";");
+      return semicolonCount > commaCount ? ";" : ",";
+    }
+
+    function parseCSV(text) {
+      text = text.replace(/^\uFEFF/, "");
+
+      const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+      if (lines.length === 0) return { headers: [], rows: [] };
+
+      const headerLine = lines[0];
+      const delimiter = detectDelimiter(headerLine);
+
+      const headers = splitCSVLine(headerLine, delimiter).map(cleanField);
+      const rows = lines.slice(1).map(line =>
+        splitCSVLine(line, delimiter).map(cleanField)
+      );
+
+      return { headers, rows };
+    }
+
+    function toNumberOrNull(value) {
+      if (value === undefined || value === null) return null;
+      let v = String(value).trim();
+      if (!v || v.toLowerCase() === "nan") return null;
+
+      v = v.replace(/[^0-9,.\-]/g, "");
+      if (!v || v === "-" || v === "," || v === ".") return null;
+
+      if (v.includes(".") && v.includes(",")) {
+        v = v.replace(/,/g, "");
+      } else if (v.includes(",")) {
+        v = v.replace(",", ".");
+      }
+
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function calculateStats(values) {
+      const nums = values.filter(v => v !== null);
+      if (nums.length === 0) {
+        return { min: null, max: null, avg: null, uniqueCount: 0 };
+      }
+      let min = nums[0], max = nums[0], sum = 0;
+      const unique = new Set();
+      for (const n of nums) {
+        if (n < min) min = n;
+        if (n > max) max = n;
+        sum += n;
+        unique.add(n);
+      }
+      return {
+        min,
+        max,
+        avg: sum / nums.length,
+        uniqueCount: unique.size
+      };
+    }
+
+    let parsedData = null;
+    let currentFileName = null;
+
+    const fileInput = document.getElementById("csvFile");
+    const runBtn = document.getElementById("runBtn");
+    const downloadTxtBtn = document.getElementById("downloadTxtBtn");
+    const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+    const fileInfo = document.getElementById("fileInfo");
+    const exportInfo = document.getElementById("exportInfo");
+    const chartsContainer = document.getElementById("chartsContainer");
+    const timeSelect = document.getElementById("timeSelect");
+    const engineSelect = document.getElementById("engineSelect");
+    const columnSelectors = document.getElementById("columnSelectors");
+    const headerRow = document.getElementById("headerRow");
+    const headerList = document.getElementById("headerList");
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        runBtn.disabled = true;
+        downloadTxtBtn.disabled = true;
+        downloadPdfBtn.disabled = true;
+        fileInfo.textContent = "";
+        parsedData = null;
+        columnSelectors.style.display = "none";
+        headerRow.style.display = "none";
+        chartsContainer.innerHTML = "";
+        exportInfo.textContent = "";
+        return;
+      }
+
+      currentFileName = file.name.replace(/\.csv$/i, "");
+      fileInfo.textContent = "Selected: " + file.name;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result;
+        parsedData = parseCSV(text);
+
+        if (!parsedData.headers || parsedData.headers.length === 0) {
+          alert("CSV header not found. Please check the file.");
+          runBtn.disabled = true;
+          downloadTxtBtn.disabled = true;
+          downloadPdfBtn.disabled = true;
+          columnSelectors.style.display = "none";
+          headerRow.style.display = "none";
+          return;
+        }
+
+        headerList.textContent = parsedData.headers.join("\n");
+        headerRow.style.display = "block";
+
+        populateColumnSelectors(parsedData.headers);
+
+        runBtn.disabled = false;
+        downloadTxtBtn.disabled = false;
+        downloadPdfBtn.disabled = true;
+        exportInfo.textContent = "";
+        chartsContainer.innerHTML = "";
+      };
+      reader.readAsText(file, "utf-8");
+    });
+
+    function populateColumnSelectors(headers) {
+      columnSelectors.style.display = "block";
+
+      timeSelect.innerHTML = "";
+      engineSelect.innerHTML = "";
+
+      headers.forEach((h, idx) => {
+        const opt1 = document.createElement("option");
+        opt1.value = idx;
+        opt1.textContent = h;
+        timeSelect.appendChild(opt1);
+
+        const opt2 = document.createElement("option");
+        opt2.value = idx;
+        opt2.textContent = h;
+        engineSelect.appendChild(opt2);
+      });
+
+      let timeGuess = null;
+      let engineGuess = null;
+
+      headers.forEach((h, idx) => {
+        const hl = h.trim().toLowerCase();
+        if (timeGuess === null && hl === "time") timeGuess = idx;
+      });
+      if (timeGuess === null) {
+        headers.forEach((h, idx) => {
+          const hl = h.trim().toLowerCase();
+          if (timeGuess === null && hl.includes("time") && !hl.includes("engine")) {
+            timeGuess = idx;
+          }
+        });
+      }
+
+      headers.forEach((h, idx) => {
+        const hl = h.trim().toLowerCase();
+        if (engineGuess === null && hl === "engine speed") engineGuess = idx;
+      });
+      if (engineGuess === null) {
+        headers.forEach((h, idx) => {
+          const hl = h.trim().toLowerCase();
+          if (
+            engineGuess === null &&
+            hl.includes("engine") &&
+            (hl.includes("speed") || hl.includes("rpm"))
+          ) {
+            engineGuess = idx;
+          }
+        });
+      }
+
+      if (timeGuess === null) timeGuess = 0;
+      if (engineGuess === null) engineGuess = 0;
+
+      timeSelect.value = String(timeGuess);
+      engineSelect.value = String(engineGuess);
+    }
+
+    runBtn.addEventListener("click", () => {
+      if (!parsedData) {
+        alert("Please select a CSV file first.");
+        return;
+      }
+      generateAnalysis();
+    });
+
+    downloadTxtBtn.addEventListener("click", () => {
+      if (!parsedData) {
+        alert("Please select a CSV file first.");
+        return;
+      }
+      downloadSensorList();
+    });
+
+    downloadPdfBtn.addEventListener("click", () => {
+      downloadChartsPdf();
+    });
+
+    function downloadSensorList() {
+      const { headers } = parsedData;
+      const content = headers.map(h => (h || "").trim()).join("\n");
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (currentFileName || "bimmerlink") + "_bimmerlink_web_sensorlist.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      exportInfo.textContent = "Sensor/column list downloaded as TXT.";
+    }
+
+    function generateAnalysis() {
+      const { headers, rows } = parsedData;
+      const nRows = rows.length;
+
+      const timeIndex = parseInt(timeSelect.value, 10);
+      const engineIndex = parseInt(engineSelect.value, 10);
+
+      if (isNaN(timeIndex) || isNaN(engineIndex)) {
+        alert("Please select both Time and Engine speed columns.");
+        return;
+      }
+      if (timeIndex === engineIndex) {
+        alert("Time and Engine speed columns must be different.");
+        return;
+      }
+
+      const sensorIndices = headers
+        .map((name, idx) => ({ name, idx }))
+        .filter(h => h.idx !== timeIndex && h.idx !== engineIndex);
+
+      const step = Math.max(Math.floor(nRows / 1000), 1);
+
+      const timeArray = [];
+      const engineArray = [];
+      for (let i = 0; i < nRows; i += step) {
+        const row = rows[i];
+        timeArray.push(row[timeIndex]);
+        engineArray.push(toNumberOrNull(row[engineIndex]));
+      }
+
+      const engineValuesFull = rows.map(r => toNumberOrNull(r[engineIndex]));
+      const engineStats = calculateStats(engineValuesFull);
+
+      chartsContainer.innerHTML = "";
+
+      createEngineChartCard(headers, timeIndex, engineIndex, timeArray, engineArray, engineStats);
+
+      let chartCount = 0;
+
+      sensorIndices.forEach(({ name, idx }) => {
+        const sensorValuesFull = rows.map(r => toNumberOrNull(r[idx]));
+        const stats = calculateStats(sensorValuesFull);
+
+        if (stats.uniqueCount < 2 || stats.min === null || stats.max === null || stats.avg === null) {
+          return;
+        }
+
+        const sensorArray = [];
+        for (let i = 0; i < nRows; i += step) {
+          sensorArray.push(toNumberOrNull(rows[i][idx]));
+        }
+
+        chartCount++;
+        createSensorChartCard(headers, timeIndex, engineIndex, name, sensorArray, engineArray, stats, timeArray);
+      });
+
+      if (chartCount === 0) {
+        exportInfo.textContent =
+          "CSV parsed, but no sensor with at least 2 unique numeric values was found (besides Engine speed).";
+        downloadPdfBtn.disabled = false;
+      } else {
+        exportInfo.textContent =
+          "Analysis completed. 1 Engine speed chart + " + chartCount +
+          " sensor charts generated. You can export them as PDF.";
+        downloadPdfBtn.disabled = false;
+      }
+    }
+
+    function createEngineChartCard(headers, timeIndex, engineIndex, timeArray, engineArray, engineStats) {
+      const engineCard = document.createElement("div");
+      engineCard.className = "chart-card";
+
+      const engineHeaderDiv = document.createElement("div");
+      engineHeaderDiv.className = "chart-header";
+
+      const engineTitleSpan = document.createElement("span");
+      engineTitleSpan.textContent = headers[engineIndex] + " vs " + headers[timeIndex];
+
+      const engineStatsSpan = document.createElement("span");
+      engineStatsSpan.className = "stats";
+      if (engineStats.min !== null) {
+        engineStatsSpan.textContent =
+          "Min: " + engineStats.min.toFixed(2) +
+          " | Max: " + engineStats.max.toFixed(2) +
+          " | Avg: " + engineStats.avg.toFixed(2);
+      } else {
+        engineStatsSpan.textContent = "No numeric data";
+      }
+
+      engineHeaderDiv.appendChild(engineTitleSpan);
+      engineHeaderDiv.appendChild(engineStatsSpan);
+      engineCard.appendChild(engineHeaderDiv);
+
+      const engineCanvas = document.createElement("canvas");
+      engineCanvas.width = 900;
+      engineCanvas.height = 260;
+      engineCard.appendChild(engineCanvas);
+      chartsContainer.appendChild(engineCard);
+
+      const engineCtx = engineCanvas.getContext("2d");
+      new Chart(engineCtx, {
+        type: "line",
+        data: {
+          labels: timeArray,
+          datasets: [
+            {
+              label: headers[engineIndex],
+              data: engineArray,
+              borderWidth: 1,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          elements: { line: { tension: 0 } },
+          scales: {
+            x: {
+              title: { display: true, text: headers[timeIndex] },
+              ticks: { maxTicksLimit: 8 }
+            },
+            y: {
+              title: { display: true, text: headers[engineIndex] }
+            }
+          },
+          plugins: {
+            legend: { display: true, position: "bottom" },
+            tooltip: { mode: "index", intersect: false }
+          }
+        }
+      });
+    }
+
+    function createSensorChartCard(headers, timeIndex, engineIndex, name, sensorArray, engineArray, stats, timeArray) {
+      const card = document.createElement("div");
+      card.className = "chart-card";
+
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "chart-header";
+
+      const titleSpan = document.createElement("span");
+      titleSpan.textContent = name + " vs " + headers[engineIndex];
+
+      const statsSpan = document.createElement("span");
+      statsSpan.className = "stats";
+      statsSpan.textContent =
+        "Min: " + stats.min.toFixed(2) +
+        " | Max: " + stats.max.toFixed(2) +
+        " | Avg: " + stats.avg.toFixed(2);
+
+      headerDiv.appendChild(titleSpan);
+      headerDiv.appendChild(statsSpan);
+      card.appendChild(headerDiv);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 900;
+      canvas.height = 260;
+      card.appendChild(canvas);
+
+      chartsContainer.appendChild(card);
+
+      const ctx = canvas.getContext("2d");
+
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: timeArray,
+          datasets: [
+            {
+              label: name,
+              data: sensorArray,
+              yAxisID: "y",
+              borderWidth: 1,
+              pointRadius: 0
+            },
+            {
+              label: headers[engineIndex],
+              data: engineArray,
+              yAxisID: "y1",
+              borderWidth: 1,
+              borderDash: [4, 2],
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          elements: {
+            line: { tension: 0 }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: headers[timeIndex] },
+              ticks: { maxTicksLimit: 8 }
+            },
+            y: {
+              position: "left",
+              title: { display: true, text: name }
+            },
+            y1: {
+              position: "right",
+              grid: { drawOnChartArea: false },
+              title: { display: true, text: headers[engineIndex] }
+            }
+          },
+          plugins: {
+            legend: { display: true, position: "bottom" },
+            tooltip: { mode: "index", intersect: false }
+          }
+        }
+      });
+    }
+
+    async function downloadChartsPdf() {
+      const cards = document.querySelectorAll(".chart-card");
+      if (!cards.length) {
+        alert("No charts to export. Please run the analysis first.");
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const pxToMm = 0.264583;
+
+      const firstCanvas = document.querySelector(".chart-card canvas");
+      if (!firstCanvas) {
+        alert("No canvas found.");
+        return;
+      }
+
+      const headerHeight = 40;
+      const footerHeight = 24;
+
+      const contentWidthMm = firstCanvas.width * pxToMm;
+      const contentHeightMm = (firstCanvas.height + headerHeight + footerHeight) * pxToMm;
+
+      const orientation = contentWidthMm >= contentHeightMm ? "l" : "p";
+
+      const pdf = new jsPDF({
+        orientation,
+        unit: "mm",
+        format: [contentWidthMm, contentHeightMm]
+      });
+
+      exportInfo.textContent = "Generating PDF, please wait...";
+
+      let firstPage = true;
+
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+        const canvas = card.querySelector("canvas");
+        if (!canvas) continue;
+
+        const headerEl = card.querySelector(".chart-header");
+        let titleText = "";
+        let statsText = "";
+
+        if (headerEl) {
+          const spans = headerEl.querySelectorAll("span");
+          if (spans[0]) titleText = spans[0].textContent || "";
+          if (spans[1]) statsText = spans[1].textContent || "";
+        }
+
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = firstCanvas.width; 
+        offCanvas.height = firstCanvas.height + headerHeight + footerHeight;
+        const offCtx = offCanvas.getContext("2d");
+
+        offCtx.fillStyle = "#ffffff";
+        offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+
+        offCtx.fillStyle = "#000000";
+        offCtx.font = "bold 14px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        offCtx.fillText(titleText, 10, 22);
+
+        offCtx.drawImage(canvas, 0, headerHeight, canvas.width, canvas.height);
+
+        offCtx.fillStyle = "#000000";
+        offCtx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        offCtx.fillText(statsText, 10, offCanvas.height - 8);
+
+        const imgData = offCanvas.toDataURL("image/jpeg", 0.85);
+
+        if (!firstPage) {
+          pdf.addPage([contentWidthMm, contentHeightMm]);
+        }
+        firstPage = false;
+
+        pdf.addImage(imgData, "JPEG", 0, 0, contentWidthMm, contentHeightMm);
+
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      const pdfName = (currentFileName || "bimmerlink") + "_bimmerlink_web_report.pdf";
+      const pdfBlob = pdf.output("blob");
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = pdfName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      exportInfo.textContent = "PDF generated and downloaded: " + pdfName;
+    }
+  </script>
+</body>
+</html>
