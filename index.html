@@ -162,9 +162,9 @@
     </div>
 
     <div class="row">
-      <button id="runBtn" disabled>RUN</button>
-      <button id="downloadTxtBtn" disabled>Download Sensor List (.txt)</button>
-      <button id="downloadPdfBtn" disabled>Download Charts (.pdf)</button>
+      <button id="runBtn" type="button" disabled>RUN</button>
+      <button id="downloadTxtBtn" type="button" disabled>Download Sensor List (.txt)</button>
+      <button id="downloadPdfBtn" type="button" disabled>Download Charts (.pdf)</button>
     </div>
 
     <div class="row export-info" id="exportInfo"></div>
@@ -239,82 +239,90 @@
     function parseCSV(text) {
       text = text.replace(/^\uFEFF/, "");
 
-      const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+      const lines = text.split(/\r?\n/).filter(function (l) {
+        return l.trim() !== "";
+      });
       if (lines.length === 0) return { headers: [], rows: [] };
 
       const headerLine = lines[0];
       const delimiter = detectDelimiter(headerLine);
 
       const headers = splitCSVLine(headerLine, delimiter).map(cleanField);
-      const rows = lines.slice(1).map(line =>
-        splitCSVLine(line, delimiter).map(cleanField)
-      );
+      const rows = lines.slice(1).map(function (line) {
+        return splitCSVLine(line, delimiter).map(cleanField);
+      });
 
-      return { headers, rows };
+      return { headers: headers, rows: rows };
     }
 
     function toNumberOrNull(value) {
       if (value === undefined || value === null) return null;
-      let v = String(value).trim();
+      var v = String(value).trim();
       if (!v || v.toLowerCase() === "nan") return null;
 
       v = v.replace(/[^0-9,.\-]/g, "");
       if (!v || v === "-" || v === "," || v === ".") return null;
 
-      if (v.includes(".") && v.includes(",")) {
+      if (v.indexOf(".") !== -1 && v.indexOf(",") !== -1) {
         v = v.replace(/,/g, "");
-      } else if (v.includes(",")) {
+      } else if (v.indexOf(",") !== -1) {
         v = v.replace(",", ".");
       }
 
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
+      var n = Number(v);
+      return isFinite(n) ? n : null;
     }
 
     function calculateStats(values) {
-      const nums = values.filter(v => v !== null);
+      var nums = values.filter(function (v) {
+        return v !== null;
+      });
+
       if (nums.length === 0) {
         return { min: null, max: null, avg: null, uniqueCount: 0 };
       }
 
-      let min = nums[0];
-      let max = nums[0];
-      let sum = 0;
-      const unique = new Set();
+      var min = nums[0];
+      var max = nums[0];
+      var sum = 0;
+      var unique = {};
 
-      for (const n of nums) {
+      for (var i = 0; i < nums.length; i++) {
+        var n = nums[i];
         if (n < min) min = n;
         if (n > max) max = n;
         sum += n;
-        unique.add(n);
+        unique[n] = true;
       }
 
+      var uniqueCount = Object.keys(unique).length;
+
       return {
-        min,
-        max,
+        min: min,
+        max: max,
         avg: sum / nums.length,
-        uniqueCount: unique.size
+        uniqueCount: uniqueCount
       };
     }
 
-    let parsedData = null;
-    let currentFileName = null;
+    var parsedData = null;
+    var currentFileName = null;
 
-    const fileInput = document.getElementById("csvFile");
-    const runBtn = document.getElementById("runBtn");
-    const downloadTxtBtn = document.getElementById("downloadTxtBtn");
-    const downloadPdfBtn = document.getElementById("downloadPdfBtn");
-    const fileInfo = document.getElementById("fileInfo");
-    const exportInfo = document.getElementById("exportInfo");
-    const chartsContainer = document.getElementById("chartsContainer");
-    const timeSelect = document.getElementById("timeSelect");
-    const engineSelect = document.getElementById("engineSelect");
-    const columnSelectors = document.getElementById("columnSelectors");
-    const headerRow = document.getElementById("headerRow");
-    const headerList = document.getElementById("headerList");
+    var fileInput = document.getElementById("csvFile");
+    var runBtn = document.getElementById("runBtn");
+    var downloadTxtBtn = document.getElementById("downloadTxtBtn");
+    var downloadPdfBtn = document.getElementById("downloadPdfBtn");
+    var fileInfo = document.getElementById("fileInfo");
+    var exportInfo = document.getElementById("exportInfo");
+    var chartsContainer = document.getElementById("chartsContainer");
+    var timeSelect = document.getElementById("timeSelect");
+    var engineSelect = document.getElementById("engineSelect");
+    var columnSelectors = document.getElementById("columnSelectors");
+    var headerRow = document.getElementById("headerRow");
+    var headerList = document.getElementById("headerList");
 
-    fileInput.addEventListener("change", () => {
-      const file = fileInput.files[0];
+    fileInput.addEventListener("change", function () {
+      var file = fileInput.files[0];
       if (!file) {
         runBtn.disabled = true;
         downloadTxtBtn.disabled = true;
@@ -331,9 +339,9 @@
       currentFileName = file.name.replace(/\.csv$/i, "");
       fileInfo.textContent = "Selected: " + file.name;
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target.result;
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var text = e.target.result;
         parsedData = parseCSV(text);
 
         if (!parsedData.headers || parsedData.headers.length === 0) {
@@ -366,47 +374,47 @@
       timeSelect.innerHTML = "";
       engineSelect.innerHTML = "";
 
-      headers.forEach((h, idx) => {
-        const opt1 = document.createElement("option");
+      headers.forEach(function (h, idx) {
+        var opt1 = document.createElement("option");
         opt1.value = idx;
         opt1.textContent = h;
         timeSelect.appendChild(opt1);
 
-        const opt2 = document.createElement("option");
+        var opt2 = document.createElement("option");
         opt2.value = idx;
         opt2.textContent = h;
         engineSelect.appendChild(opt2);
       });
 
-      let timeGuess = null;
-      let engineGuess = null;
+      var timeGuess = null;
+      var engineGuess = null;
 
-      headers.forEach((h, idx) => {
-        const hl = h.trim().toLowerCase();
+      headers.forEach(function (h, idx) {
+        var hl = h.trim().toLowerCase();
         if (timeGuess === null && hl === "time") timeGuess = idx;
       });
 
       if (timeGuess === null) {
-        headers.forEach((h, idx) => {
-          const hl = h.trim().toLowerCase();
-          if (timeGuess === null && hl.includes("time") && !hl.includes("engine")) {
+        headers.forEach(function (h, idx) {
+          var hl = h.trim().toLowerCase();
+          if (timeGuess === null && hl.indexOf("time") !== -1 && hl.indexOf("engine") === -1) {
             timeGuess = idx;
           }
         });
       }
 
-      headers.forEach((h, idx) => {
-        const hl = h.trim().toLowerCase();
+      headers.forEach(function (h, idx) {
+        var hl = h.trim().toLowerCase();
         if (engineGuess === null && hl === "engine speed") engineGuess = idx;
       });
 
       if (engineGuess === null) {
-        headers.forEach((h, idx) => {
-          const hl = h.trim().toLowerCase();
+        headers.forEach(function (h, idx) {
+          var hl = h.trim().toLowerCase();
           if (
             engineGuess === null &&
-            hl.includes("engine") &&
-            (hl.includes("speed") || hl.includes("rpm"))
+            hl.indexOf("engine") !== -1 &&
+            (hl.indexOf("speed") !== -1 || hl.indexOf("rpm") !== -1)
           ) {
             engineGuess = idx;
           }
@@ -420,7 +428,7 @@
       engineSelect.value = String(engineGuess);
     }
 
-    runBtn.addEventListener("click", () => {
+    runBtn.addEventListener("click", function () {
       if (!parsedData) {
         alert("Please select a CSV file first.");
         return;
@@ -428,7 +436,7 @@
       generateAnalysis();
     });
 
-    downloadTxtBtn.addEventListener("click", () => {
+    downloadTxtBtn.addEventListener("click", function () {
       if (!parsedData) {
         alert("Please select a CSV file first.");
         return;
@@ -436,17 +444,20 @@
       downloadSensorList();
     });
 
-    downloadPdfBtn.addEventListener("click", () => {
+    downloadPdfBtn.addEventListener("click", function () {
       downloadChartsPdf();
     });
 
     function downloadSensorList() {
-      const { headers } = parsedData;
-      const content = headers.map(h => (h || "").trim()).join("\n");
-      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
+      var headers = parsedData.headers;
+      var content = headers.map(function (h) {
+        return (h || "").trim();
+      }).join("\n");
 
-      const a = document.createElement("a");
+      var blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+
+      var a = document.createElement("a");
       a.href = url;
       a.download = (currentFileName || "bimmerlink") + "_bimmerlink_web_sensorlist.txt";
       document.body.appendChild(a);
@@ -458,11 +469,12 @@
     }
 
     function generateAnalysis() {
-      const { headers, rows } = parsedData;
-      const nRows = rows.length;
+      var headers = parsedData.headers;
+      var rows = parsedData.rows;
+      var nRows = rows.length;
 
-      const timeIndex = parseInt(timeSelect.value, 10);
-      const engineIndex = parseInt(engineSelect.value, 10);
+      var timeIndex = parseInt(timeSelect.value, 10);
+      var engineIndex = parseInt(engineSelect.value, 10);
 
       if (isNaN(timeIndex) || isNaN(engineIndex)) {
         alert("Please select both Time and Engine speed columns.");
@@ -474,33 +486,43 @@
         return;
       }
 
-      const sensorIndices = headers
-        .map((name, idx) => ({ name, idx }))
-        .filter(h => h.idx !== timeIndex && h.idx !== engineIndex);
+      var sensorIndices = headers
+        .map(function (name, idx) {
+          return { name: name, idx: idx };
+        })
+        .filter(function (h) {
+          return h.idx !== timeIndex && h.idx !== engineIndex;
+        });
 
-      const step = Math.max(Math.floor(nRows / 1000), 1);
+      var step = Math.max(Math.floor(nRows / 1000), 1);
 
-      const timeArray = [];
-      const engineArray = [];
+      var timeArray = [];
+      var engineArray = [];
 
-      for (let i = 0; i < nRows; i += step) {
-        const row = rows[i];
+      for (var i = 0; i < nRows; i += step) {
+        var row = rows[i];
         timeArray.push(row[timeIndex]);
         engineArray.push(toNumberOrNull(row[engineIndex]));
       }
 
-      const engineValuesFull = rows.map(r => toNumberOrNull(r[engineIndex]));
-      const engineStats = calculateStats(engineValuesFull);
+      var engineValuesFull = rows.map(function (r) {
+        return toNumberOrNull(r[engineIndex]);
+      });
+      var engineStats = calculateStats(engineValuesFull);
 
       chartsContainer.innerHTML = "";
-
       createEngineChartCard(headers, timeIndex, engineIndex, timeArray, engineArray, engineStats);
 
-      let chartCount = 0;
+      var chartCount = 0;
 
-      sensorIndices.forEach(({ name, idx }) => {
-        const sensorValuesFull = rows.map(r => toNumberOrNull(r[idx]));
-        const stats = calculateStats(sensorValuesFull);
+      sensorIndices.forEach(function (item) {
+        var name = item.name;
+        var idx = item.idx;
+
+        var sensorValuesFull = rows.map(function (r) {
+          return toNumberOrNull(r[idx]);
+        });
+        var stats = calculateStats(sensorValuesFull);
 
         if (
           stats.uniqueCount < 2 ||
@@ -511,9 +533,9 @@
           return;
         }
 
-        const sensorArray = [];
-        for (let i = 0; i < nRows; i += step) {
-          sensorArray.push(toNumberOrNull(rows[i][idx]));
+        var sensorArray = [];
+        for (var j = 0; j < nRows; j += step) {
+          sensorArray.push(toNumberOrNull(rows[j][idx]));
         }
 
         chartCount++;
@@ -550,16 +572,16 @@
       engineArray,
       engineStats
     ) {
-      const engineCard = document.createElement("div");
+      var engineCard = document.createElement("div");
       engineCard.className = "chart-card";
 
-      const engineHeaderDiv = document.createElement("div");
+      var engineHeaderDiv = document.createElement("div");
       engineHeaderDiv.className = "chart-header";
 
-      const engineTitleSpan = document.createElement("span");
+      var engineTitleSpan = document.createElement("span");
       engineTitleSpan.textContent = headers[engineIndex] + " vs " + headers[timeIndex];
 
-      const engineStatsSpan = document.createElement("span");
+      var engineStatsSpan = document.createElement("span");
       engineStatsSpan.className = "stats";
 
       if (engineStats.min !== null) {
@@ -578,13 +600,13 @@
       engineHeaderDiv.appendChild(engineStatsSpan);
       engineCard.appendChild(engineHeaderDiv);
 
-      const engineCanvas = document.createElement("canvas");
+      var engineCanvas = document.createElement("canvas");
       engineCanvas.width = 900;
       engineCanvas.height = 260;
       engineCard.appendChild(engineCanvas);
       chartsContainer.appendChild(engineCard);
 
-      const engineCtx = engineCanvas.getContext("2d");
+      var engineCtx = engineCanvas.getContext("2d");
 
       new Chart(engineCtx, {
         type: "line",
@@ -631,16 +653,16 @@
       stats,
       timeArray
     ) {
-      const card = document.createElement("div");
+      var card = document.createElement("div");
       card.className = "chart-card";
 
-      const headerDiv = document.createElement("div");
+      var headerDiv = document.createElement("div");
       headerDiv.className = "chart-header";
 
-      const titleSpan = document.createElement("span");
+      var titleSpan = document.createElement("span");
       titleSpan.textContent = name + " vs " + headers[engineIndex];
 
-      const statsSpan = document.createElement("span");
+      var statsSpan = document.createElement("span");
       statsSpan.className = "stats";
       statsSpan.textContent =
         "Min: " +
@@ -654,14 +676,14 @@
       headerDiv.appendChild(statsSpan);
       card.appendChild(headerDiv);
 
-      const canvas = document.createElement("canvas");
+      var canvas = document.createElement("canvas");
       canvas.width = 900;
       canvas.height = 260;
       card.appendChild(canvas);
 
       chartsContainer.appendChild(card);
 
-      const ctx = canvas.getContext("2d");
+      var ctx = canvas.getContext("2d");
 
       new Chart(ctx, {
         type: "line",
@@ -716,57 +738,62 @@
     }
 
     function downloadChartsPdf() {
-      const cards = document.querySelectorAll(".chart-card");
+      var cards = document.querySelectorAll(".chart-card");
       if (!cards.length) {
         alert("No charts to export. Please run the analysis first.");
         return;
       }
 
-      const { jsPDF } = window.jspdf;
-      const pxToMm = 0.264583;
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        alert("PDF library (jsPDF) is not loaded. Please check your internet connection and try again.");
+        return;
+      }
 
-      const firstCanvas = document.querySelector(".chart-card canvas");
+      var jsPDF = window.jspdf.jsPDF;
+      var pxToMm = 0.264583;
+
+      var firstCanvas = document.querySelector(".chart-card canvas");
       if (!firstCanvas) {
         alert("No canvas found.");
         return;
       }
 
-      const headerHeight = 40;
-      const footerHeight = 24;
+      var headerHeight = 40;
+      var footerHeight = 24;
 
-      const contentWidthMm = firstCanvas.width * pxToMm;
-      const contentHeightMm = (firstCanvas.height + headerHeight + footerHeight) * pxToMm;
+      var contentWidthMm = firstCanvas.width * pxToMm;
+      var contentHeightMm = (firstCanvas.height + headerHeight + footerHeight) * pxToMm;
 
-      const orientation = contentWidthMm >= contentHeightMm ? "l" : "p";
+      var orientation = contentWidthMm >= contentHeightMm ? "l" : "p";
 
-      const pdf = new jsPDF({
-        orientation,
+      var pdf = new jsPDF({
+        orientation: orientation,
         unit: "mm",
         format: [contentWidthMm, contentHeightMm]
       });
 
       exportInfo.textContent = "Generating PDF, please wait...";
 
-      let firstPage = true;
+      var firstPage = true;
 
-      cards.forEach((card) => {
-        const canvas = card.querySelector("canvas");
+      cards.forEach(function (card) {
+        var canvas = card.querySelector("canvas");
         if (!canvas) return;
 
-        const headerEl = card.querySelector(".chart-header");
-        let titleText = "";
-        let statsText = "";
+        var headerEl = card.querySelector(".chart-header");
+        var titleText = "";
+        var statsText = "";
 
         if (headerEl) {
-          const spans = headerEl.querySelectorAll("span");
+          var spans = headerEl.querySelectorAll("span");
           if (spans[0]) titleText = spans[0].textContent || "";
           if (spans[1]) statsText = spans[1].textContent || "";
         }
 
-        const offCanvas = document.createElement("canvas");
+        var offCanvas = document.createElement("canvas");
         offCanvas.width = firstCanvas.width;
         offCanvas.height = firstCanvas.height + headerHeight + footerHeight;
-        const offCtx = offCanvas.getContext("2d");
+        var offCtx = offCanvas.getContext("2d");
 
         offCtx.fillStyle = "#ffffff";
         offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
@@ -781,7 +808,7 @@
         offCtx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
         offCtx.fillText(statsText, 10, offCanvas.height - 8);
 
-        const imgData = offCanvas.toDataURL("image/jpeg", 0.85);
+        var imgData = offCanvas.toDataURL("image/jpeg", 0.85);
 
         if (!firstPage) {
           pdf.addPage([contentWidthMm, contentHeightMm]);
@@ -791,21 +818,12 @@
         pdf.addImage(imgData, "JPEG", 0, 0, contentWidthMm, contentHeightMm);
       });
 
-      const pdfName = (currentFileName || "bimmerlink") + "_bimmerlink_web_report.pdf";
-      const pdfBlob = pdf.output("blob");
-      const url = URL.createObjectURL(pdfBlob);
+      var pdfName = (currentFileName || "bimmerlink") + "_bimmerlink_web_report.pdf";
+      pdf.save(pdfName);
 
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = pdfName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      exportInfo.textContent = "PDF generated and downloaded: " + pdfName;
+      exportInfo.textContent = "PDF generated: " + pdfName;
     }
-	
+	  
   </script>
 </body>
 </html>
